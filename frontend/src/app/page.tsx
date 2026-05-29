@@ -20,7 +20,7 @@ export default function Home() {
 
   // Load settings from localStorage on mount
   useEffect(() => {
-    const saved = localStorage.getItem('autosub_settings');
+    const saved = localStorage.getItem('subflow_settings');
     if (saved) {
       try {
         setSettings(JSON.parse(saved));
@@ -31,7 +31,7 @@ export default function Home() {
   // Wrap setSettings to also save to localStorage
   const updateSettings = (newSettings: any) => {
     setSettings(newSettings);
-    localStorage.setItem('autosub_settings', JSON.stringify(newSettings));
+    localStorage.setItem('subflow_settings', JSON.stringify(newSettings));
   };
 
   const handleFileSelect = async (path: string) => {
@@ -57,7 +57,7 @@ export default function Home() {
               <Subtitles size={18} className="text-white" />
             </div>
             <h1 className="text-xl font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white to-neutral-400">
-              AutoSub NAS
+              SubFlow
             </h1>
           </div>
           <div className="flex items-center space-x-4">

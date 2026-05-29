@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from routes.api import router as api_router
 
-app = FastAPI(title="AutoSub API")
+app = FastAPI(title="SubFlow API")
 
 app.add_middleware(
     CORSMiddleware,
@@ -16,7 +16,7 @@ app.include_router(api_router, prefix="/api")
 
 @app.get("/")
 def read_root():
-    return {"message": "Welcome to AutoSub API"}
+    return {"message": "Welcome to SubFlow API"}
 
 if __name__ == "__main__":
     import uvicorn
