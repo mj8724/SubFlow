@@ -25,13 +25,22 @@ def format_timestamp(seconds: float):
 def transcribe_audio_local(audio_path: str, model_name: str = "tiny"):
     """Transcribe audio using faster-whisper locally on CPU."""
     print(f"Transcribing locally with CPU ({model_name}): {audio_path}")
+    print(f"Loading model '{model_name}'...")
     from faster_whisper import WhisperModel
     model = WhisperModel(model_name, device="cpu", compute_type="int8")
+    print(f"Model loaded. Starting transcription...")
     segments, info = model.transcribe(audio_path, beam_size=5)
+    
+    duration = info.duration
+    print(f"Audio duration: {duration:.1f}s | Language: {info.language} (prob: {info.language_probability:.2f})")
     
     result = []
     for segment in segments:
         result.append({"start": segment.start, "end": segment.end, "text": segment.text})
+        pct = (segment.end / duration * 100) if duration > 0 else 0
+        print(f"[STT {pct:5.1f}%] {format_timestamp(segment.start)} --> {format_timestamp(segment.end)} | {segment.text.strip()}")
+    
+    print(f"Transcription complete: {len(result)} segments extracted.")
     return result
 
 def transcribe_audio_api(audio_path: str, api_key: str):
