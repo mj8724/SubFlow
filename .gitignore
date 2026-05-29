@@ -1,20 +1,39 @@
-# Python
+# Dependencies
+node_modules/
 venv/
 __pycache__/
-*.pyc
-.env
-backend/jobs.db
 
-# Node.js
-frontend/node_modules/
-frontend/.next/
-frontend/out/
-frontend/build/
-frontend/.env.local
+# Build
+.next/
+out/
+dist/
+
+# Database
+*.db
+
+# Redis binaries & data
+redis/
+backend/redis/
+*.rdb
+*.zip
+
+# Logs
+backend/logs/
+backend/tqdm_debug.log
+
+# Test files
+backend/test_translation.py
 
 # IDE
 .vscode/
 .idea/
 
 # OS
+Thumbs.db
 .DS_Store
+
+# Antigravity CLI
+.antigravitycli/
+
+# Docker (local volumes)
+dump.rdb
