@@ -5,3 +5,42 @@ services:
     image: redis:alpine
     ports:
       - "6379:6379"
+
+  backend:
+    build: 
+      context: ./backend
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./backend/autosub.db:/app/autosub.db
+      # Mount the media directory to /media inside the container
+      - ./media:/media
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    depends_on:
+      - redis
+
+  worker:
+    build:
+      context: ./backend
+    command: celery -A tasks worker --loglevel=info
+    volumes:
+      - ./backend/autosub.db:/app/autosub.db
+      # Same media mount for the worker so it can read/write files
+      - ./media:/media
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    depends_on:
+      - redis
+
+  frontend:
+    build:
+      context: ./frontend
+    ports:
+      - "3333:3333"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8888
+    depends_on:
+      - backend

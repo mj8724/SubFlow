@@ -1,5 +1,8 @@
 from celery import Celery
 import os
+import time
+import tqdm
+
 import ai_pipeline
 from database import SessionLocal
 import models
@@ -21,7 +24,81 @@ def update_job_status(job_id, status, progress, error=None):
         db.commit()
     db.close()
 
+# 2. Monkey-patch tqdm to capture download progress and speed
+import tqdm.auto
+_orig_tqdm = tqdm.auto.tqdm
+
+class DownloadTrackingTqdm(_orig_tqdm):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._last_db_time = time.time()
+        self._last_n = 0
+
+    def update(self, n=1):
+        super().update(n)
+        now = time.time()
+        if now - self._last_db_time > 0.5:
+            # check if we have a current_job_id in celery task
+            job_id = getattr(tqdm, 'current_job_id', None)
+            if job_id and hasattr(self, 'total') and self.total:
+                pct = self.n / self.total
+                speed = (self.n - self._last_n) / (now - self._last_db_time)
+                speed_mb = speed / (1024 * 1024)
+                status_text = f"downloading_model|{pct*100:.1f}%|{speed_mb:.1f} MB/s"
+                update_job_status(job_id, status_text, 0.3 + (pct * 0.1))
+                
+            api_cb = getattr(tqdm, 'api_progress_callback', None)
+            if api_cb and hasattr(self, 'total') and self.total:
+                pct = self.n / self.total
+                speed = (self.n - self._last_n) / (now - self._last_db_time)
+                speed_mb = speed / (1024 * 1024)
+                api_cb(pct * 100, f"{speed_mb:.1f} MB/s")
+                
+            self._last_db_time = now
+            self._last_n = self.n
+
+tqdm.auto.tqdm = DownloadTrackingTqdm
+tqdm.tqdm = DownloadTrackingTqdm
+
+import sys
+import contextlib
+import functools
+
+def task_logger(func):
+    @functools.wraps(func)
+    def wrapper(job_id, *args, **kwargs):
+        log_dir = "logs"
+        os.makedirs(log_dir, exist_ok=True)
+        log_path = os.path.join(log_dir, f"job_{job_id}.log")
+        
+        class DualWriter:
+            def __init__(self, orig_stream, file_obj):
+                self.orig_stream = orig_stream
+                self.file_obj = file_obj
+                
+            def write(self, msg):
+                self.orig_stream.write(msg)
+                self.file_obj.write(msg)
+                self.file_obj.flush()
+                
+            def flush(self):
+                self.orig_stream.flush()
+                self.file_obj.flush()
+                
+        with open(log_path, 'w', encoding='utf-8') as f:
+            old_stdout = sys.stdout
+            old_stderr = sys.stderr
+            sys.stdout = DualWriter(sys.stdout, f)
+            sys.stderr = DualWriter(sys.stderr, f)
+            try:
+                return func(job_id, *args, **kwargs)
+            finally:
+                sys.stdout = old_stdout
+                sys.stderr = old_stderr
+    return wrapper
+
 @celery_app.task
+@task_logger
 def process_video_task(job_id: int, file_path: str, config: dict):
     try:
         update_job_status(job_id, "processing", 0.1)
@@ -38,17 +115,29 @@ def process_video_task(job_id: int, file_path: str, config: dict):
         if config.get("stt_mode") == "api":
             segments = ai_pipeline.transcribe_audio_api(audio_path, config.get("stt_api_key", ""))
         else:
-            segments = ai_pipeline.transcribe_audio_local(audio_path)
+            model_name = config.get("stt_model", "tiny")
+            import tqdm
+            tqdm.current_job_id = job_id
+            from faster_whisper import download_model
+            download_model(model_name)
+            tqdm.current_job_id = None
+            update_job_status(job_id, "processing", 0.4)
+            segments = ai_pipeline.transcribe_audio_local(audio_path, model_name)
         update_job_status(job_id, "processing", 0.6)
 
         # 3. Translate
-        translations = []
-        for seg in segments:
-            if config.get("trans_mode") == "api":
+        if config.get("trans_mode") == "api":
+            translations = []
+            for seg in segments:
                 trans = ai_pipeline.translate_text_api(seg["text"], config.get("trans_api_key", ""))
-            else:
-                trans = ai_pipeline.translate_text_local(seg["text"])
-            translations.append(trans)
+                translations.append(trans)
+        else:
+            texts = [seg["text"] for seg in segments]
+            import tqdm
+            tqdm.current_job_id = job_id
+            translations = ai_pipeline.translate_texts_local(texts)
+            tqdm.current_job_id = None
+            
         update_job_status(job_id, "processing", 0.9)
 
         # 4. SRT

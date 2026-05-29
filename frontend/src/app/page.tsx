@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import axios from 'axios';
 import FileBrowser from '@/components/FileBrowser';
 import JobList from '@/components/JobList';
@@ -12,10 +12,27 @@ export default function Home() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [settings, setSettings] = useState({
     stt_mode: 'local',
+    stt_model: 'tiny',
     stt_api_key: '',
     trans_mode: 'local',
     trans_api_key: ''
   });
+
+  // Load settings from localStorage on mount
+  useEffect(() => {
+    const saved = localStorage.getItem('autosub_settings');
+    if (saved) {
+      try {
+        setSettings(JSON.parse(saved));
+      } catch (e) {}
+    }
+  }, []);
+
+  // Wrap setSettings to also save to localStorage
+  const updateSettings = (newSettings: any) => {
+    setSettings(newSettings);
+    localStorage.setItem('autosub_settings', JSON.stringify(newSettings));
+  };
 
   const handleFileSelect = async (path: string) => {
     try {
@@ -70,7 +87,7 @@ export default function Home() {
       <SettingsModal 
         isOpen={isSettingsOpen} 
         onClose={() => setIsSettingsOpen(false)} 
-        onSave={setSettings} 
+        onSave={updateSettings} 
         currentSettings={settings} 
       />
 

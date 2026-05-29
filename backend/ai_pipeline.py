@@ -22,11 +22,11 @@ def format_timestamp(seconds: float):
     seconds = math.floor(seconds)
     return f"{hours:02d}:{minutes:02d}:{seconds:02d},{millis:03d}"
 
-def transcribe_audio_local(audio_path: str):
+def transcribe_audio_local(audio_path: str, model_name: str = "tiny"):
     """Transcribe audio using faster-whisper locally on CPU."""
-    print(f"Transcribing locally with CPU: {audio_path}")
+    print(f"Transcribing locally with CPU ({model_name}): {audio_path}")
     from faster_whisper import WhisperModel
-    model = WhisperModel("tiny", device="cpu", compute_type="int8")
+    model = WhisperModel(model_name, device="cpu", compute_type="int8")
     segments, info = model.transcribe(audio_path, beam_size=5)
     
     result = []
@@ -58,11 +58,62 @@ def transcribe_audio_api(audio_path: str, api_key: str):
              })
         return result
 
+# Singleton for translation model
+_marian_model = None
+_marian_tokenizer = None
+
+def _get_marian_model():
+    global _marian_model, _marian_tokenizer
+    if _marian_model is None or _marian_tokenizer is None:
+        from transformers import MarianMTModel, MarianTokenizer
+        print("Loading Opus-MT model (this may take a while the first time to download)...")
+        model_name = "Helsinki-NLP/opus-mt-en-zh"
+        _marian_tokenizer = MarianTokenizer.from_pretrained(model_name)
+        _marian_model = MarianMTModel.from_pretrained(model_name)
+        _marian_model.to("cpu")
+        print("Opus-MT model loaded.")
+    return _marian_model, _marian_tokenizer
+
+def translate_texts_local(texts, dest='zh-CN', src='en'):
+    """
+    Local batch translation using huggingface transformers pipeline (Opus-MT).
+    Processes in small chunks to prevent OOM.
+    """
+    if not texts:
+        return []
+        
+    try:
+        print(f"Batch translating {len(texts)} segments with Opus-MT...")
+        model, tokenizer = _get_marian_model()
+        
+        translated_texts = []
+        batch_size = 32
+        
+        for i in range(0, len(texts), batch_size):
+            chunk = texts[i:i + batch_size]
+            # Tokenize and generate
+            inputs = tokenizer(chunk, return_tensors="pt", padding=True, truncation=True, max_length=512)
+            inputs = {k: v.to("cpu") for k, v in inputs.items()}
+            
+            translated_tokens = model.generate(**inputs)
+            chunk_translated_texts = tokenizer.batch_decode(translated_tokens, skip_special_tokens=True)
+            translated_texts.extend(chunk_translated_texts)
+            
+            # Print progress for debugging
+            print(f"Translated chunk {i//batch_size + 1}/{(len(texts) + batch_size - 1)//batch_size}")
+            
+        return translated_texts
+        
+    except Exception as e:
+        print(f"Translation failed: {e}")
+        return texts # fallback to original
+
 def translate_text_local(text: str):
-    """Translate English text to Chinese locally (Placeholder)"""
-    print(f"Translating locally: {text}")
-    # TODO: Implement local translation (e.g. CTranslate2 Opus-MT)
-    return f"【本地翻译】{text}"
+    """Translate English text to Chinese locally"""
+    if not text.strip():
+        return text
+    return translate_texts_local([text])[0]
+
 
 def translate_text_api(text: str, api_key: str):
     """Translate English text to Chinese via API (Placeholder for OpenAI-like API)"""
@@ -78,5 +129,4 @@ def generate_srt(segments, translations, output_path: str):
             
             f.write(f"{i+1}\n")
             f.write(f"{start_time} --> {end_time}\n")
-            f.write(f"{trans}\n")
-            f.write(f"{seg['text']}\n\n")
+            f.write(f"{trans}\n\n")
