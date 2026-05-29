@@ -20,6 +20,12 @@ export default function Home() {
 
   // Load settings from localStorage on mount
   useEffect(() => {
+    // Migrate old key if exists
+    const oldSaved = localStorage.getItem('autosub_settings');
+    if (oldSaved && !localStorage.getItem('subflow_settings')) {
+      localStorage.setItem('subflow_settings', oldSaved);
+      localStorage.removeItem('autosub_settings');
+    }
     const saved = localStorage.getItem('subflow_settings');
     if (saved) {
       try {

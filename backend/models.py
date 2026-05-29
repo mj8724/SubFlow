@@ -12,3 +12,4 @@ class TranslationJob(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     error_message = Column(String, nullable=True)
+    celery_task_id = Column(String, nullable=True)

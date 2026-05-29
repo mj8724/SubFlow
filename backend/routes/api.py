@@ -75,7 +75,11 @@ def create_job(request: JobRequest, db: Session = Depends(get_db)):
     db.refresh(job)
     
     config_dict = request.config.model_dump() if request.config else {}
-    process_video_task.delay(job.id, job.file_path, config_dict)
+    task = process_video_task.delay(job.id, job.file_path, config_dict)
+    
+    # Save celery task id for cancellation
+    job.celery_task_id = task.id
+    db.commit()
     
     return job
 
@@ -94,9 +98,22 @@ def get_job(job_id: int, db: Session = Depends(get_db)):
 @router.delete("/jobs")
 def clear_jobs(db: Session = Depends(get_db)):
     try:
+        from celery.app.control import Control
+        from tasks import celery_app
+        control = Control(celery_app)
+        
+        # Revoke all running/pending celery tasks
+        jobs = db.query(models.TranslationJob).all()
+        for job in jobs:
+            if job.celery_task_id and job.status in ('pending', 'processing', 'downloading_model'):
+                control.revoke(job.celery_task_id, terminate=True)
+        
+        # Also purge any queued tasks
+        celery_app.control.purge()
+        
         db.query(models.TranslationJob).delete()
         db.commit()
-        return {"status": "success", "message": "All jobs cleared"}
+        return {"status": "success", "message": "All jobs cleared and tasks cancelled"}
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
