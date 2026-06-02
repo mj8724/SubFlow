@@ -42,7 +42,7 @@ export default function Home() {
 
   const handleFileSelect = async (path: string) => {
     try {
-      await axios.post('http://localhost:8888/api/jobs', { 
+      await axios.post('http://localhost:8888/api/jobs', {
         file_path: path,
         config: settings
       });
@@ -50,6 +50,19 @@ export default function Home() {
       setTimeout(() => setToast(null), 3000);
     } catch (err) {
       alert("Failed to start job");
+    }
+  };
+
+  const handleBatchExtractAudio = async (paths: string[], format: string) => {
+    try {
+      await axios.post('http://localhost:8888/api/jobs/batch-audio', {
+        file_paths: paths,
+        output_format: format
+      });
+      setToast(`已开始提取 ${paths.length} 个文件的音频`);
+      setTimeout(() => setToast(null), 3000);
+    } catch (err) {
+      alert("批量音频提取启动失败");
     }
   };
 
@@ -82,7 +95,7 @@ export default function Home() {
       <div className="max-w-7xl mx-auto px-6 py-8">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 h-[calc(100vh-10rem)]">
           <div className="lg:col-span-7 h-full">
-            <FileBrowser onFileSelect={handleFileSelect} />
+            <FileBrowser onFileSelect={handleFileSelect} onBatchExtractAudio={handleBatchExtractAudio} />
           </div>
           <div className="lg:col-span-5 h-full">
             <JobList />

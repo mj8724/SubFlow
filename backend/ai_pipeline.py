@@ -3,13 +3,19 @@ import os
 import math
 import requests
 
-def extract_audio(video_path: str, output_path: str):
-    """Extract audio from video using ffmpeg."""
-    command = [
-        "ffmpeg", "-y", "-i", video_path,
-        "-vn", "-acodec", "libmp3lame", "-q:a", "2",
-        output_path
-    ]
+def extract_audio(video_path: str, output_path: str, output_format: str = "mp3"):
+    """Extract audio from video using ffmpeg. Supports mp3, wav, flac, aac formats."""
+    format_codecs = {
+        "mp3": ["-acodec", "libmp3lame", "-q:a", "2"],
+        "wav": ["-acodec", "pcm_s16le"],
+        "flac": ["-acodec", "flac"],
+        "aac": ["-acodec", "aac", "-b:a", "192k"],
+    }
+    if output_format not in format_codecs:
+        raise ValueError(f"Unsupported audio format: {output_format}. Supported: {', '.join(format_codecs.keys())}")
+
+    codec_args = format_codecs[output_format]
+    command = ["ffmpeg", "-y", "-i", video_path, "-vn"] + codec_args + [output_path]
     subprocess.run(command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     return output_path
 

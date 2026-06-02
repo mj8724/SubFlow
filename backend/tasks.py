@@ -108,7 +108,7 @@ def process_video_task(job_id: int, file_path: str, config: dict):
 
         # 1. Extract Audio
         print(f"Extracting audio for {file_path}")
-        ai_pipeline.extract_audio(file_path, audio_path)
+        ai_pipeline.extract_audio(file_path, audio_path, output_format="mp3")
         update_job_status(job_id, "processing", 0.3)
 
         # 2. STT
@@ -151,5 +151,23 @@ def process_video_task(job_id: int, file_path: str, config: dict):
         return {"status": "completed", "job_id": job_id, "srt_path": srt_path}
     except Exception as e:
         print(f"Error processing job {job_id}: {e}")
+        update_job_status(job_id, "failed", 0.0, str(e))
+        return {"status": "failed", "job_id": job_id, "error": str(e)}
+
+@celery_app.task
+@task_logger
+def extract_audio_task(job_id: int, file_path: str, output_format: str = "mp3"):
+    try:
+        update_job_status(job_id, "processing", 0.1)
+        base_path = os.path.splitext(file_path)[0]
+        audio_path = base_path + f".{output_format}"
+
+        print(f"Extracting audio from {file_path} -> {audio_path}")
+        ai_pipeline.extract_audio(file_path, audio_path, output_format=output_format)
+        update_job_status(job_id, "completed", 1.0)
+
+        return {"status": "completed", "job_id": job_id, "audio_path": audio_path}
+    except Exception as e:
+        print(f"Error extracting audio for job {job_id}: {e}")
         update_job_status(job_id, "failed", 0.0, str(e))
         return {"status": "failed", "job_id": job_id, "error": str(e)}

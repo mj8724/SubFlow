@@ -13,3 +13,5 @@ class TranslationJob(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     error_message = Column(String, nullable=True)
     celery_task_id = Column(String, nullable=True)
+    job_type = Column(String, default="subtitle")  # "subtitle" | "extract_audio"
+    output_format = Column(String, default="mp3")   # "mp3" | "wav" | "flac" | "aac"

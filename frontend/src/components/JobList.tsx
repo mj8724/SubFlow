@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Loader2, CheckCircle2, XCircle, Clock, Trash2, Download, Terminal } from 'lucide-react';
+import { Loader2, CheckCircle2, XCircle, Clock, Trash2, Download, Terminal, Music } from 'lucide-react';
 import LogModal from './LogModal';
 
 export default function JobList() {
@@ -33,23 +33,29 @@ export default function JobList() {
     }
   };
 
-  const getStatusIcon = (status: string) => {
+  const getStatusIcon = (status: string, jobType: string = 'subtitle') => {
     if (status.startsWith('downloading_model')) return <Download className="animate-bounce text-purple-400" size={18} />;
     switch(status) {
       case 'processing': return <Loader2 className="animate-spin text-blue-400" size={18} />;
-      case 'completed': return <CheckCircle2 className="text-green-400" size={18} />;
+      case 'completed': return jobType === 'extract_audio' ? <Music className="text-blue-400" size={18} /> : <CheckCircle2 className="text-green-400" size={18} />;
       case 'failed': return <XCircle className="text-red-400" size={18} />;
       default: return <Clock className="text-neutral-400" size={18} />;
     }
   };
 
-  const getStatusText = (status: string, progress: number) => {
+  const getStatusText = (status: string, progress: number, jobType: string = 'subtitle') => {
     if (status.startsWith('downloading_model')) {
       const parts = status.split('|');
       if (parts.length === 3) {
         return `Downloading Model... ${parts[1]} (${parts[2]})`;
       }
       return 'Downloading Model...';
+    }
+    if (jobType === 'extract_audio') {
+      if (status === 'processing') return `正在提取音频... ${Math.round(progress * 100)}%`;
+      if (status === 'completed') return '音频已提取';
+      if (status === 'failed') return '提取失败';
+      return status;
     }
     if (status === 'processing') {
       let step = 'Processing...';
@@ -68,7 +74,7 @@ export default function JobList() {
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-lg font-semibold text-white flex items-center space-x-2">
             <div className="w-2 h-6 bg-purple-500 rounded-full"></div>
-            <span>Translation Tasks</span>
+            <span>任务列表</span>
           </h2>
           {jobs.length > 0 && (
             <button 
@@ -94,15 +100,23 @@ export default function JobList() {
                 <div key={job.id} className="bg-neutral-950/50 rounded-lg p-4 border border-neutral-800/50 hover:border-neutral-700 transition-colors">
                   <div className="flex items-start justify-between mb-3">
                     <div className="flex-1 min-w-0 pr-4">
-                      <p className="text-sm font-medium text-neutral-200 truncate" title={job.file_path}>
-                        {job.file_path.split('/').pop()}
-                      </p>
+                      <div className="flex items-center space-x-2">
+                        <p className="text-sm font-medium text-neutral-200 truncate" title={job.file_path}>
+                          {job.file_path.split('/').pop()}
+                        </p>
+                        {job.job_type === 'extract_audio' && (
+                          <span className="flex items-center space-x-1 bg-blue-500/10 text-blue-400 px-1.5 py-0.5 rounded text-xs flex-shrink-0">
+                            <Music size={10} />
+                            <span>音频</span>
+                          </span>
+                        )}
+                      </div>
                       <p className="text-xs text-neutral-500 font-mono mt-1">ID: {job.id}</p>
                     </div>
                     <div className="flex items-center space-x-2">
                       <div className="flex items-center space-x-2 bg-neutral-900 px-2.5 py-1 rounded-full border border-neutral-800">
-                        {getStatusIcon(job.status)}
-                        <span className="text-xs font-medium capitalize text-neutral-300">{getStatusText(job.status, job.progress)}</span>
+                        {getStatusIcon(job.status, job.job_type)}
+                        <span className="text-xs font-medium capitalize text-neutral-300">{getStatusText(job.status, job.progress, job.job_type)}</span>
                       </div>
                       <button 
                         onClick={() => setSelectedJobId(job.id)}

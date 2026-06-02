@@ -1,14 +1,25 @@
 from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks, Body
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 from typing import List, Optional
 import os
 
 from database import SessionLocal, engine
 import models
 from pydantic import BaseModel
-from tasks import process_video_task
+from tasks import process_video_task, extract_audio_task
 
 models.Base.metadata.create_all(bind=engine)
+
+# Migration: ensure new columns exist for existing databases
+with engine.connect() as conn:
+    columns = [row[1] for row in conn.execute(text("PRAGMA table_info(translation_jobs)"))]
+    if 'job_type' not in columns:
+        conn.execute(text("ALTER TABLE translation_jobs ADD COLUMN job_type VARCHAR DEFAULT 'subtitle'"))
+    if 'output_format' not in columns:
+        conn.execute(text("ALTER TABLE translation_jobs ADD COLUMN output_format VARCHAR DEFAULT 'mp3'"))
+    conn.commit()
+
 router = APIRouter()
 
 def get_db():
@@ -23,6 +34,8 @@ class JobResponse(BaseModel):
     file_path: str
     status: str
     progress: float
+    job_type: str = "subtitle"
+    output_format: str = "mp3"
 
 class JobConfig(BaseModel):
     stt_mode: str = "local"
@@ -34,6 +47,12 @@ class JobConfig(BaseModel):
 class JobRequest(BaseModel):
     file_path: str
     config: Optional[JobConfig] = None
+    job_type: str = "subtitle"
+    output_format: str = "mp3"
+
+class BatchAudioRequest(BaseModel):
+    file_paths: List[str]
+    output_format: str = "mp3"
 
 @router.get("/browse")
 def browse_directory(path: str = "/"):
@@ -68,24 +87,54 @@ def select_folder():
 def create_job(request: JobRequest, db: Session = Depends(get_db)):
     if not os.path.exists(request.file_path):
         raise HTTPException(status_code=404, detail="Video file not found")
-        
-    job = models.TranslationJob(file_path=request.file_path)
+
+    job = models.TranslationJob(
+        file_path=request.file_path,
+        job_type=request.job_type,
+        output_format=request.output_format
+    )
     db.add(job)
     db.commit()
     db.refresh(job)
-    
-    config_dict = request.config.model_dump() if request.config else {}
-    task = process_video_task.delay(job.id, job.file_path, config_dict)
-    
+
+    if request.job_type == "extract_audio":
+        task = extract_audio_task.delay(job.id, job.file_path, request.output_format)
+    else:
+        config_dict = request.config.model_dump() if request.config else {}
+        task = process_video_task.delay(job.id, job.file_path, config_dict)
+
     # Save celery task id for cancellation
     job.celery_task_id = task.id
     db.commit()
-    
+
     return job
 
 @router.get("/jobs", response_model=List[JobResponse])
 def get_jobs(db: Session = Depends(get_db)):
     jobs = db.query(models.TranslationJob).order_by(models.TranslationJob.created_at.desc()).all()
+    return jobs
+
+@router.post("/jobs/batch-audio", response_model=List[JobResponse])
+def create_batch_audio_jobs(request: BatchAudioRequest, db: Session = Depends(get_db)):
+    jobs = []
+    for file_path in request.file_paths:
+        if not os.path.exists(file_path):
+            continue  # Skip missing files
+
+        job = models.TranslationJob(
+            file_path=file_path,
+            job_type="extract_audio",
+            output_format=request.output_format
+        )
+        db.add(job)
+        db.commit()
+        db.refresh(job)
+
+        task = extract_audio_task.delay(job.id, job.file_path, request.output_format)
+        job.celery_task_id = task.id
+        db.commit()
+
+        jobs.append(job)
     return jobs
 
 @router.get("/jobs/{job_id}", response_model=JobResponse)
